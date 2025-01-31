@@ -9,7 +9,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#define MAX_FILES 1024
+#define MAX_FILES 4096
 #define MAX_PATH 1024
 #define HASH_SIZE 33 // 32 caracteres + 1 para el terminador nulo
 
@@ -22,8 +22,17 @@ typedef struct {
     int count;
 } FileList;
 
+
+typedef struct {
+    char file1[MAX_PATH];
+    char file2[MAX_PATH];
+} DuplicatePair;
+
 FileList to_visit;
 FileList visited;
+DuplicatePair duplicates[MAX_FILES]; // Para almacenar pares de duplicados
+int duplicate_count = 0; // Contador de duplicados
+
 sem_t mutex;
 sem_t sem_to_visit;
 sem_t sem_visited;
@@ -46,7 +55,8 @@ int main(int argc, char *argv[]) {
     int num_threads = atoi(argv[2]);
     const char *start_dir = argv[4];
     char mode = argv[6][0]; // 'e' o 'l'
-
+	
+	duplicate_count = 0; // Reiniciar contador de duplicados
     // Inicializar listas y semáforos
     to_visit.count = 0;
     visited.count = 0;
@@ -67,6 +77,16 @@ int main(int argc, char *argv[]) {
     // Esperar a que los hilos terminen
     for (int i = 0; i < num_threads; i++) {
         pthread_join(threads[i], NULL);
+    }
+    
+    // Imprimir estadísticas de duplicados
+
+    printf("Se han encontrado %d archivos duplicados.\n", duplicate_count);
+
+    for (int i = 0; i < duplicate_count; i++) {
+
+        printf("%s es duplicado de %s\n", duplicates[i].file1, duplicates[i].file2);
+
     }
 
     // Limpiar semáforos
@@ -96,13 +116,6 @@ void *check_duplicates(void *arg) {
         strcpy(current_file, to_visit.files[--to_visit.count].path);
         sem_post(&mutex);
 
-        // Mostrar el archivo que se está verificando
-        printf("Verificando: %s\n", current_file);
-        
-        // Imprimir el valor de to_visit.count
-        sem_wait(&mutex);
-        printf("Archivos restantes en to_visit: %d\n", to_visit.count);
-        sem_post(&mutex);
 
         // Verificar si el archivo es un directorio
         struct stat statbuf;
@@ -133,7 +146,13 @@ void *check_duplicates(void *arg) {
             sem_wait(&sem_visited);
             for (int i = 0; i < visited.count; i++) {
                 if (is_duplicate(current_file, visited.files[i].path, mode)) { // Usar el modo
-                    printf("Duplicado encontrado: %s y %s\n", current_file, visited.files[i].path);
+                    // Almacenar el par de duplicados
+
+                    strcpy(duplicates[duplicate_count].file1, current_file);
+
+                    strcpy(duplicates[duplicate_count].file2, visited.files[i].path);
+
+                    duplicate_count++;
                 }
             }
             add_to_visited(current_file);
